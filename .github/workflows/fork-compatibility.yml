@@ -1,0 +1,50 @@
+name: Fork compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1"
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge current upstream in the CI worktree
+        shell: bash
+        run: |
+          git remote add upstream https://github.com/lsfusion/platform.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/lsfusion/platform.git
+          git fetch upstream master --no-tags
+          git config user.name "fork-compatibility-ci"
+          git config user.email "fork-compatibility-ci@users.noreply.github.com"
+          git merge --no-edit --no-ff upstream/master
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build server and dependencies
+        run: mvn -B -ntp -pl server -am clean install -DskipTests
