@@ -66,7 +66,10 @@ public class MCPDispatcher {
     // (https://ai.lsfusion.org/mcp) via MCPRemoteClient. Sister tools
     // lsfusion_retrieve_howtos / lsfusion_retrieve_community were removed
     // together with the legacy Pinecone backend that fed them; the new OpenAI
-    // VS indexes all five doc folders (language, paradigm, how-to, brief, rules)
+    // The VS indexes the three reference doc folders (language, paradigm, how-to).
+    // `brief` and `rules` are published but NOT indexed: an article there is named
+    // and delivered whole by get_guidance, so chunking it would only recreate the
+    // partial-delivery problem that change removed.
     // under the single lsfusion_retrieve_docs tool.
     private static final Set<String> REMOTE_TOOLS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             TOOL_RETRIEVE_DOCS, TOOL_GET_GUIDANCE, TOOL_REPORT_FEEDBACK)));
@@ -420,14 +423,23 @@ public class MCPDispatcher {
                 .put("anyOf", new JSONArray()
                         .put(new JSONObject()
                                 .put("type", "string")
-                                .put("enum", new JSONArray().put("language").put("paradigm").put("how-to").put("brief").put("rules")))
+                                .put("enum", new JSONArray().put("language").put("paradigm").put("how-to")))
                         .put(new JSONObject().put("type", "null")))
                 .put("description",
-                        "Optional sourceType filter (the docs folder). Omit (or pass null) to search all five branches and merge; only the two TOP articles (`Brief`, `Rules`) are excluded, because get_guidance already delivers them in full. `language` = syntax / operator reference; `paradigm` = concepts / abstractions; `how-to` = task recipes; `brief` = concise capability map; `rules` = coding constraints for one area — unlike the other branches this lookup is not optional: perform it before working in an area.");
+                        "Optional sourceType filter (the docs folder); in a batch it applies to every query. Omit (or pass null) to search all three reference branches and merge. `language` = syntax / operator reference; `paradigm` = concepts / abstractions; `how-to` = task recipes. The `brief` and `rules` branches are not here at all: an area's capability map and its coding rules are read whole, by name, with `lsfusion_get_guidance`.");
         JSONObject input = new JSONObject()
                 .put("type", "object")
                 .put("properties", new JSONObject()
-                        .put("query", strProp("Short topical phrase. Semantic match (not literal); rephrase rather than retry the same query if results are weak."))
+                        // string OR array: one call may carry several independent
+                        // needs, which is the normal shape of real traffic. A plain
+                        // `type: string` here would hide that from a strict client
+                        // even though the server accepts it.
+                        .put("query", new JSONObject()
+                                .put("anyOf", new JSONArray()
+                                        .put(new JSONObject().put("type", "string"))
+                                        .put(new JSONObject().put("type", "array")
+                                                .put("items", new JSONObject().put("type", "string"))))
+                                .put("description", "One short technical query, or a list of DISTINCT queries for independent needs already known before this call. Batch only lookups that do not depend on one another; when one answer can determine or refine the next query, call the tool again instead. Do not batch alternative phrasings of one need. In a batch, `type` and `exclude_ids` apply to every query, all queries share one result cap, a chunk answering two of them is returned once, and each result names the query it is credited to. Semantic match (not literal); rephrase rather than retry the same query if results are weak."))
                         .put("type", typeProp)
                         // Must be DECLARED even though remoteToolResult forwards `args` verbatim:
                         // `additionalProperties:false` above would otherwise make it unpassable by
@@ -439,7 +451,7 @@ public class MCPDispatcher {
         return new JSONObject()
                 .put("name", TOOL_RETRIEVE_DOCS)
                 .put("description",
-                        "Search official lsFusion documentation for chunks relevant to a query. Returns `{docs:[{id,source,text,score}]}` sorted by descending score. Use `type` to narrow to one branch when known; omit to search all five branches and merge (the two top guidance articles are always excluded — get_guidance serves those in full). To page deeper on one information need, pass the `id` values you already hold in `exclude_ids`; they are filtered out before ranking. Omit them when rephrasing for a better ranking or asking a different question, or the filter will drop the chunk that best answers it. The corpus is English-only (`docs/en/`) — cross-lingual embeddings make non-English queries work, but English wording gives the best recall.")
+                        "Search official lsFusion documentation for chunks relevant to a query, or to several at once. Returns `{docs:[{id,source,text,score,query}]}` sorted by descending score; `query` names which of the submitted queries a chunk answers (null when one was submitted). Use `type` to narrow to one branch when known; omit to search all three reference branches and merge. The `brief` and `rules` branches are NOT here — an area's capability map and its coding rules are read whole, by name, with `lsfusion_get_guidance`, and reading the rules of an area you are about to work in is mandatory. To page deeper on one information need, pass the `id` values you already hold in `exclude_ids`; they are filtered out before ranking. Omit them when rephrasing for a better ranking or asking a different question, or the filter will drop the chunk that best answers it. The corpus is English-only (`docs/en/`) — cross-lingual embeddings make non-English queries work, but English wording gives the best recall.")
                 .put("inputSchema", input);
     }
 
@@ -447,13 +459,24 @@ public class MCPDispatcher {
     // — keep in sync. No "if not already in context" escape hatch (it invites skipping the call),
     // and no "follow all rules" flattening (the guidance carries both MUST and SHOULD).
     private static JSONObject getGuidanceDescriptor() {
+        // Both parameters must be DECLARED even though the dispatcher forwards args
+        // verbatim: additionalProperties:false below makes an undeclared one
+        // unpassable by a strict client. Optional, so a client that predates them
+        // keeps sending {} and keeps getting the two top articles.
+        JSONObject properties = new JSONObject()
+                .put("rules", new JSONObject()
+                        .put("type", "string")
+                        .put("description", "Name of the `rules` area whose article you need — the short name in the FIRST COLUMN of the map inside the top `rules` article, not a slug (`Rules_logic`) and not a title. The whole article comes back: no search, no ranking, no excerpt. An area's article carries the current constraints and prescribed practices of that area — the traps accepted without a diagnostic that still change behaviour, the performance and structural choices already made, and the procedures whose order matters — and it is the authoritative source for them, so it is read rather than reconstructed from general lsFusion knowledge. Reading it is BINDING wherever the map states a trigger for it — the map's one-line summary is an index entry, not the rule, and an area you did not fetch is not an area without rules. Its silence is not evidence either: that an article states no rule about a construct does not make the construct valid, supported or safe. Omit BOTH parameters to get the top article of each branch, which is the start-of-session call and the only way to obtain the maps."))
+                .put("brief", new JSONObject()
+                        .put("type", "string")
+                        .put("description", "Name of the `brief` area whose article you need — the short name from the map inside the top `brief` article. Same shape as `rules`, and only one of the two may be given per call: one call delivers one whole article. Read an area's brief when the material already present does not identify a likely platform mechanism for the job — it is what stops you inventing a mechanism the platform already has. It is a survey, not an inventory: an article arrives whole, but a capability it does not mention is UNKNOWN, not absent, and that silence never supports a claim that lsFusion lacks something. Search `language` / `paradigm` / `how-to` with `lsfusion_retrieve_docs` before reporting that no documented mechanism exists. And the brief says WHAT exists; those three branches say how to write it."));
         JSONObject input = new JSONObject()
                 .put("type", "object")
-                .put("properties", new JSONObject())
+                .put("properties", properties)
                 .put("additionalProperties", false);
         return new JSONObject()
                 .put("name", TOOL_GET_GUIDANCE)
-                .put("description", "Fetch the brief overview and the CORE rules for working with lsFusion. The assistant MUST call this at the start of ANY lsFusion-related task — writing, modifying or reviewing lsFusion code, or answering questions about its syntax or semantics — and MUST then read what it returns and apply each rule according to that rule's stated strength (MUST / MUST NOT are binding; SHOULD / SHOULD NOT are recommendations). Once per session is enough. This is the top level only: the rules for a specific area are separate articles, retrieved with `lsfusion_retrieve_docs(type='rules')`.")
+                .put("description", "Read ONE lsFusion guidance article WHOLE — the coding rules of an area (`rules`) or its capability map (`brief`). These two branches are a small hierarchy of articles, not a search corpus: you name an article and receive all of it, so nothing relevant can be silently withheld the way a top-N chunk retrieval withholds it. Call with NO arguments at the start of any lsFusion task: that returns the top article of both branches, each carrying the base material plus the complete map of its branch, and the `rules` map states per area the point at which reading that area's article stops being optional. Apply each rule at its stated strength (MUST / MUST NOT are binding; SHOULD / SHOULD NOT are recommendations). Syntax, concepts and recipes are a different tool: `lsfusion_retrieve_docs`. Every article is fenced by `=== BEGIN ... ===` / `=== END ... ===`; the END fence is what proves you hold the complete text, so if it is missing — or your client saved the result to a file and showed you a preview — read the full file before using anything from it.")
                 .put("inputSchema", input);
     }
 

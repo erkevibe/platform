@@ -11,18 +11,53 @@ This rule set applies to ALL tasks related to lsFusion
 (including analysis, how-to, examples, documentation lookup,
 project exploration, and code writing).
 
-These rules MUST be followed.
+Apply each rule below at its stated strength.
 
-The `language`, `paradigm`, `how-to` and `brief` branches provide
-reference material. Not retrieving one of their articles is not by
-itself a violation of these rules.
+The `language`, `paradigm` and `how-to` branches are reference material,
+searched with `lsfusion_retrieve_docs`; they are not a mandatory reading
+list. The workflow below states when a lookup is required.
 
-The `rules` branch is different. Before working in a technical area,
-the assistant MUST perform a lookup for rules relevant to that area
-and apply what it receives according to the stated strength of each
-rule (MUST / MUST NOT or SHOULD / SHOULD NOT).
+The `rules` branch is different in two ways. It is not searched: an
+article is named and delivered whole, so no part of it can be withheld
+without the assistant being able to tell. And reading it is not
+optional: before working in a technical area, the assistant MUST read
+that area's rules article and apply each rule according to its stated
+strength (MUST / MUST NOT or SHOULD / SHOULD NOT).
 
-A retrieval may be incomplete; this does not make the lookup optional.
+## The rules articles — what to read and when
+
+This article does NOT contain the rules below. Each row is a separate
+article, read whole with `lsfusion_get_guidance(rules='<name>')` using
+the name in the first column.
+
+| name | governs | read it before |
+|---|---|---|
+| `logic` | properties, `NULL` propagation, `ABSTRACT` / `+=`, `ORDER`, action bodies, `<-`, `FOR` / `WHILE`, `NEWTHREAD` / `NEWEXECUTOR`, `WHEN` and where local events run, `CONSTRAINT`, `NEWSESSION` / `NESTEDSESSION` / `APPLY` | declaring any property or action; writing any expression whose operand can be `NULL`; writing any `<-`, `FOR`, `WHILE`, `WHEN`, `CONSTRAINT`, `NEWSESSION` or `APPLY`; reasoning about when a change reaches the database |
+| `view` | `FORM` blocks and object groups, `ORDERS`, `WAIT` / `NOWAIT`, `DESIGN`, `NAVIGATOR` placement across `WINDOW`s, jrxml and `SUBREPORT`, `ResourceBundle` and reverse translation | writing or extending any `FORM` or `DESIGN`; opening a form with `SHOW` or `DIALOG`; adding anything to `NAVIGATOR`; creating or editing any jrxml, or reasoning about `PRINT`; writing any user-visible caption or `MESSAGE` text |
+| `physical` | `TABLE`, `MATERIALIZED`, `INDEX`, `RECALCULATE`, how to split modules, `REQUIRE` and coupling, `migration.script`, `STORED PROPERTY` vs `PROPERTY` | adding a `TABLE`, an `INDEX` or `MATERIALIZED`; acting on a slow form or query; creating a module or moving a declaration between modules; renaming or re-namespacing ANY existing property, action or class — omitting this silently destroys stored data |
+| `integration` | flat `IMPORT` vs form import, `EXTID`, staging properties, `EXPORT FROM` vs `EXPORT <form>`, formats, `WHERE`, column ids | writing any `IMPORT`, `EXPORT` or `JSON FROM`; exchanging data with anything outside the application |
+
+## Reading an area's rules (MANDATORY)
+
+1. The table is only an index used to select an article. The assistant
+   MUST NOT use a summary in it as a substitute for the article.
+
+2. When a row's trigger first applies in a session — including in the
+   middle of a task — the assistant MUST call
+   `lsfusion_get_guidance(rules='<name>')`, read the article, and apply
+   its rules before proceeding with the triggered work. It MUST NOT
+   defer this to a final review pass. Once per area per session.
+
+3. As a final backstop, before presenting the result, the assistant MUST
+   compare the constructs it actually wrote against the table, and read
+   and apply any triggered article it missed.
+
+4. The assistant MUST NOT claim that no rule applies to an area whose
+   article it has not read.
+
+5. If a required rules article cannot be read, the assistant MUST tell
+   the user which area went unread, and MUST NOT present the result as
+   rule-checked.
 
 ## Mandatory workflow
 
@@ -91,22 +126,8 @@ B. DOCUMENTATION LOOKUP
 1. Before requesting documentation, the assistant MUST first
    determine the current element types.
 
-2. The assistant MUST retrieve definitions and syntax
+2. The assistant MUST retrieve the relevant definitions and syntax
    for those element types before editing.
-   Before working in an area for the first time in a session,
-   the assistant MUST also call
-   `lsfusion_retrieve_docs(type='rules', query='<area>')`
-   to retrieve the rules relevant to that area.
-   The mandatory initial lookup is once per area,
-   not once per operation.
-   The query SHOULD be short and technical, in English where possible,
-   naming the lsFusion keyword when it is known;
-   a task spanning several areas SHOULD use a separate lookup per area.
-   The lookup is due even when it comes back empty or partial:
-   what is missing is the article, not the constraint.
-   `exclude_ids` continues ONE information need with the chunk ids
-   still held; a rephrase or a different question goes without it,
-   or the filter drops the chunk that would have answered it.
 
 3. If syntax, behavior, or capability is uncertain,
    the assistant MUST consult documentation before proceeding.
@@ -197,24 +218,31 @@ D. FEEDBACK / REPORTING (`lsfusion_report_feedback`)
    Double quotes are NOT a valid string literal delimiter
    in lsFusion and MUST NOT be used.
 
-4. An expression whose comma is NOT enclosed in brackets of
-   its own — `OVERRIDE a, b`, `CONCAT sep, a, b`,
-   `GROUP CONCAT expr, sep` — MUST NOT go straight into a
-   comma-separated list (`PROPERTIES`, `EXPORT FROM`,
-   `JSON FROM`, `ORDER`, group-object and parameter lists):
-   that comma reads as the list separator and the list
-   silently reshapes. Group it, or name it as a property, in
-   whichever form the enclosing block accepts. A comma inside
-   an ordinary call's own parentheses is safe.
+4. Date and time literals MUST use the underscore formats:
+   `2001_01_31` (`DATE`), `2001_01_31_14:30[:00]`
+   (`DATETIME`), `14:30[:00]` (`TIME`). An ISO-style
+   `2001-01-31` is NOT a date literal.
 
-5. When introducing a new parameter, the assistant MUST
+5. An expression whose comma is NOT enclosed in brackets of
+   its own — `OVERRIDE a, b`, `CONCAT sep, a, b`,
+   `GROUP CONCAT expr, sep`, `MAX a, b` — MUST NOT go
+   straight into a comma-separated list (`PROPERTIES`,
+   `EXPORT FROM`, `JSON FROM`, `ORDER`, group-object and
+   parameter lists): that comma reads as the list separator
+   and the list silently reshapes. Group it, or name it as
+   a property, in whichever form the enclosing block accepts.
+   A call's own commas — `f(a, b)` — are safe in the enclosing
+   list, but they do not fence off such an expression placed
+   inside them: `f(MAX a, b)` passes one argument, not two.
+
+6. When introducing a new parameter, the assistant MUST
    declare its class explicitly at the first use
    (`prop(Class x)`, `GROUP MAX Class x IF ...`).
    `AS` does NOT declare the parameter's class: it is
    a cast — the parameter itself stays untyped
    at later occurrences.
 
-6. The body of a `META` statement consists of module-level
+7. The body of a `META` statement consists of module-level
    statements; action operators (`NEW ...`, assignments)
    cannot appear there directly, and the `@` statement
    using a metacode is itself a module-level statement
@@ -222,7 +250,7 @@ D. FEEDBACK / REPORTING (`lsfusion_report_feedback`)
    parameterized object creation, declare an action
    with parameters and call it.
 
-7. The two declaration forms of a local property
+8. The two declaration forms of a local property
    belong to different levels and MUST NOT be mixed up:
    the `LOCAL name = Class (...);` statement is valid
    only inside an action body `{ ... }`,
