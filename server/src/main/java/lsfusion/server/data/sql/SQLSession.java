@@ -799,10 +799,6 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
                         try {
                             if(isExplainTemporaryTablesEnabled())
                                 addTTLog("TRANSRET", transactionTable, tableOwner == null ? null : tableOwner.get(), owner);
-//                            
-//                            if(Settings.get().isEnableHacks())
-//                                sessionTablesStackReturned.put(transactionTable, ExceptionUtils.getStackTrace());
-//
                         } finally { // the accounting must be dropped even if the logging above fails : the counter is rewound anyway, and the name would be handed out again with no physical table behind it
                             lastReturnedStamp.remove(transactionTable);
                             privateConnection.temporary.removeTable(transactionTable);
@@ -1372,8 +1368,17 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
         }
         // the same, undoing a return rather than serving a new request : the slot goes back to the owner it came from, and that owner WANTS what a rollback restores in it, so this one is not
         // discarded
-        private boolean takeBackParked(String table) {
-            return parked.remove(table);
+        // a restoration finding the slot parked again takes it back whole : it may well be in retaken as well - handed on by this transaction and given back by whoever got
+        // it - and that hand-on is undone with the transaction, its rows along with it (the rollback restores them). Left in retaken, the slot the owner just got back would
+        // be thrown away by discarded, with the owner still holding it. Only a restoration says so : the speculative undo (see rollReturnTemporaryTable) takes the slot back
+        // into a transaction that goes on, and the record that it was handed on is exactly what the real rollback of that transaction will need
+        private boolean takeBackParked(String table, boolean restoring) {
+            if(!parked.remove(table))
+                return false;
+
+            if(restoring)
+                retaken.remove(table);
+            return true;
         }
         // the same for a name this transaction had already handed on to somebody else : the rollback restoration is asking for a slot it parked, and the owner that took it in between is being
         // thrown away by the very rollback that is asking. What the rollback leaves in the table is the FIRST owner's rows - its own emptying and the second owner's writes go together - so
@@ -1394,7 +1399,12 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
         // table of the connection's own pool that was REUSED inside a transaction, since only the ones created there go into transactionTables
         private Set<String> discarded() {
             Set<String> discarded = new HashSet<>(created);
-            discarded.addAll(retaken);
+            for(String table : retaken)
+                // handed on by this transaction and not taken back by a restoration : with the retaker still holding it the map still names that retaker, and only a discard
+                // takes that entry down. Given back by the retaker it is parked, and if it was also taken EMPTY from the pool by this transaction it is empty again after the
+                // rollback and nobody's - that one goes back to the pool with the rest of its kind (see released) rather than being burned
+                if(!(mine.contains(table) && parked.contains(table)))
+                    discarded.add(table);
             for(String table : parked)
                 if(!mine.contains(table)) // the rest are empty after the rollback and go back to the pool, see released
                     discarded.add(table);
@@ -1880,7 +1890,7 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
                 boolean takenFromNext = assertNotExists && currentOwner != null
                         && (GlobalTempTablePool.isPoolName(tableName) ? poolTables.takeBackRetaken(tableName) : transactionRetaken.remove(tableName));
 
-                if(GlobalTempTablePool.isPoolName(tableName) && !takenFromNext && !poolTables.takeBackParked(tableName) && !adapter.tempTablePool.reclaim(tableName)) {
+                if(GlobalTempTablePool.isPoolName(tableName) && !takenFromNext && !poolTables.takeBackParked(tableName, assertNotExists) && !adapter.tempTablePool.reclaim(tableName)) {
                     tryCommon(opOwner, false); // the connection above was taken for a slot this session is not getting back
                     // which of the two it is decides whether anything can be done about it, and the message is the only place that will say : a name the pool no longer owns was killed while
                     // this owner held it - there may be no table behind it at all - where one it still owns has simply been given to somebody else
@@ -3568,7 +3578,7 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
         if(!(sessionTable != null && sessionTable.get() != null)) { // одна из возможных причин - DataSession.updateSessionNotChangedEvents
             if(isExplainTemporaryTablesEnabled() && privateConnection != null)
                 privateConnection.temporary.outLog(table.getName());
-            ServerLoggers.assertLog(false, "USED RETURNED TABLE : " + table.getName() + ", DEBUG INFO : " + sessionDebugInfo.get(table.getName()), true);
+            ServerLoggers.assertLog(false, "USED RETURNED TABLE : " + table.getName() + ", DEBUG INFO : " + sessionDebugInfo.get(table.getName()));
             wasSessionTableAssertion.set(true);
         }
     }
@@ -4010,8 +4020,11 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
             boolean locked = alreadyLocked || tryLockWrite(OperationOwner.unknown);
             if(locked) {
                 try {
-                    Connection prevConnection = privateConnection.sql;
-                    if (alreadyLocked || !DataAdapter.getServer(newConnection).equals(DataAdapter.getServer(prevConnection))) {
+                    // the scheduler scored this session under a read lock that saw a private connection (see runLockReadOperation), and gave that lock up before coming here : a session
+                    // holding nothing but slots gives its connection back after any statement in between, so it is asked again under the write lock - the way the periodic restart double
+                    // checks. With nothing to move from there is nothing to do, and the connection taken for the move goes back below
+                    Connection prevConnection = privateConnection != null ? privateConnection.sql : null;
+                    if (prevConnection != null && (alreadyLocked || !DataAdapter.getServer(newConnection).equals(DataAdapter.getServer(prevConnection)))) {
                         EConsumer<Connection, SQLException> cleaner;
                         try {
                             cleaner = restartConnection(newConnection);
@@ -4102,34 +4115,49 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
 
     private EConsumer<Connection, SQLException> restartConnection(Connection newConnection) throws SQLException, SQLHandledException {
         DataAdapter.Server newServer = DataAdapter.getServer(newConnection);
+        Connection prevConnection = privateConnection.sql;
         Set<String> movedPoolTables = new HashSet<>();
+        Set<String> created = new HashSet<>(); // what the move has put on the new connection so far : a move that does not go through takes it off again
         // a slot of the node pool moves with its session exactly as a table of the connection's own pool does : the same name is created on the new connection and the rows are copied. It has
         // to, because an unlogged relation belongs to ONE server. The move is therefore ONE shape for both kinds - what to copy, copy it, then clean up the side being left - and the whole of
         // the difference is that a slot has something to say that a temporary table does not. Where its record lives is what decides that : a temporary table's is the inventory of this same
         // ExConnection, which comes along with it, so there is nothing to announce and its dead rows are reset here and now; a slot's is the node pool's, which stays where it is, so its
         // server and its debt are told to the pool below - after the switch, and only for what was actually copied
-        for(final String table : sessionTablesMap.keySet()) {
-            // both questions are asked of both kinds. A name whose table no longer exists has nothing to migrate, and its owner returns it as usual (see evictNotExistingTable); and a name the
-            // new connection already reads needs no copy - which for a slot means the same server, since it is permanent and server wide, and for a temporary table is never, since it belongs
-            // to the backend being left. isOn answers exactly that for both : a name the node pool does not own is on no server of its
-            TemporaryTableStruct struct = getStruct(table);
-            if(struct == null || adapter.tempTablePool.isOn(table, newServer))
-                continue;
+        //
+        // the rows are read with this session's ordinary statements, and an ordinary statement ends in tryCommon - which gives the private connection back when the session holds nothing but
+        // slots. That is the very connection being copied from, so it is held for the length of the move the way lockNeedPrivate holds it
+        explicitNeedPrivate++;
+        try {
+            for(final String table : sessionTablesMap.keySet()) {
+                // both questions are asked of both kinds. A name whose table no longer exists has nothing to migrate, and its owner returns it as usual (see evictNotExistingTable); and a name
+                // the new connection already reads needs no copy - which for a slot means the same server, since it is permanent and server wide, and for a temporary table is never, since it
+                // belongs to the backend being left. isOn answers exactly that for both : a name the node pool does not own is on no server of its
+                TemporaryTableStruct struct = getStruct(table);
+                if(struct == null || adapter.tempTablePool.isOn(table, newServer))
+                    continue;
 
-            // nothing is dropped on the way in. The name may already be on the new server - an earlier move away from it that could not finish left it there - and then the create fails and
-            // the whole move is off, with every table still where it was. That is deliberately all it does : the alternative, dropping whatever carries that name first, would be silent loss
-            // of the very table being moved the day two Server objects turn out to address one database
-            uploadTableToConnection(table, struct, newConnection, OperationOwner.unknown);
+                // nothing is dropped on the way in. The name may already be on the new server - a hand, or another node's take-over of this one's number, may have left it there - and then the
+                // create fails and the whole move is off, with every table still where it was. That is deliberately all it does : the alternative, dropping whatever carries that name first,
+                // would be silent loss of the very table being moved the day two Server objects turn out to address one database
+                uploadTableToConnection(table, struct, newConnection, created, OperationOwner.unknown);
 
-            if(GlobalTempTablePool.isPoolName(table))
-                // where the two genuinely part company : a slot has a RECORD of which server it is on, and a copy left behind on the old one, and neither is this connection's to carry. Both
-                // are dealt with below, once the session is actually there - where a temporary table has nothing to say, its own inventory having come along with the ExConnection
-                movedPoolTables.add(table);
-            else
-                privateConnection.temporary.resetDeadRows(table); // it is a brand new relation on the new connection
+                if(GlobalTempTablePool.isPoolName(table))
+                    // where the two genuinely part company : a slot has a RECORD of which server it is on, and a copy left behind on the old one, and neither is this connection's to carry.
+                    // Both are dealt with below, once the session is actually there - where a temporary table has nothing to say, its own inventory having come along with the ExConnection
+                    movedPoolTables.add(table);
+                else
+                    privateConnection.temporary.resetDeadRows(table); // it is a brand new relation on the new connection
+            }
+            // on the new connection while the session is still on the old one : it is the last thing here that can fail, and nothing is switched over until it has not
+            privateConnection.updateContext(true, contextProvider, newConnection);
+        } catch (Throwable t) {
+            // the move is off, and physically so : what it had already created on the new connection comes off again. Left there, a slot's copy sits under a name the pool records on the old
+            // server, and every later move of that slot here fails on it - a temporary table's sits on a backend that goes back to the pool with an inventory that does not know it
+            dropPoolCopies(newConnection, created);
+            throw t;
+        } finally {
+            explicitNeedPrivate--;
         }
-        // on the new connection while the session is still on the old one : it is the last thing here that can fail, and nothing is switched over until it has not
-        privateConnection.updateContext(true, contextProvider, newConnection);
 
         Set<String> tables = new HashSet<>(privateConnection.temporary.getTables());
         for(String table : tables)
@@ -4145,19 +4173,16 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
             adapter.tempTablePool.resetDeadRows(table); // it is a brand new relation on the new server
         }
 
-        EConsumer<Connection, SQLException> cleaner = getCleaner(tables, syntax);
-        if(movedPoolTables.isEmpty())
-            return cleaner;
+        // the copy the session is leaving behind, dropped right here on the connection being left rather than by its cleaner : the pool runs a cleaner only for a connection it keeps, and a
+        // connection it closes instead takes its temporary tables with it - but not a slot's copy, which is a permanent relation, and would stay on that server under a name the pool now
+        // records on this one
+        dropPoolCopies(prevConnection, movedPoolTables);
 
-        // the copy the session is leaving behind, dropped on the connection it is leaving : a slot's table is on exactly one server
-        return connection -> {
-            dropPoolCopies(connection, movedPoolTables);
-            cleaner.accept(connection);
-        };
+        return getCleaner(tables, syntax);
     }
 
-    // copies of slots that are accounted for somewhere else, so the only thing to do with them is to get rid of them. Allowed to fail without stopping anything : what a failed drop leaves is
-    // an orphan of the kind the next start of the node sweeps
+    // tables a move has no further use for on that connection - copies of slots that are accounted for on another server, or what a move that did not go through had put down - so the only
+    // thing to do with them is to get rid of them. Allowed to fail without stopping anything : what a failed drop leaves is an orphan of the kind the next start of the node sweeps
     private void dropPoolCopies(Connection connection, Set<String> tables) {
         for(String table : tables)
             try {
@@ -4260,13 +4285,15 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
         finishExceptions(firstException);
     }
 
-    public void uploadTableToConnection(final String table, TemporaryTableStruct fieldStruct, final Connection sqlTo, final OperationOwner owner) throws SQLException, SQLHandledException {
-        uploadTableToConnection(table, fieldStruct.keys, fieldStruct.properties, sqlTo, owner);
+    // created is told the name as soon as the table is there, before a row is copied : a copy that fails half way has still created it, and the caller cleans up by that set
+    private void uploadTableToConnection(final String table, TemporaryTableStruct fieldStruct, final Connection sqlTo, Set<String> created, final OperationOwner owner) throws SQLException, SQLHandledException {
+        uploadTableToConnection(table, fieldStruct.keys, fieldStruct.properties, sqlTo, created, owner);
     }
 
     // which kind to create is the name's to say, not the caller's : it is the same answer isPoolName gives everywhere else
-    private void uploadTableToConnection(final String table, ImOrderSet<KeyField> keys, ImSet<PropertyField> properties, final Connection sqlTo, final OperationOwner owner) throws SQLException, SQLHandledException {
+    private void uploadTableToConnection(final String table, ImOrderSet<KeyField> keys, ImSet<PropertyField> properties, final Connection sqlTo, Set<String> created, final OperationOwner owner) throws SQLException, SQLHandledException {
         createTable(sqlTo, table, keys, properties, GlobalTempTablePool.isPoolName(table), owner);
+        created.add(table);
 
         final Result<Integer> proceeded = new Result<>(0);
         ResultHandler<KeyField, PropertyField> reader = new ReadBatchResultHandler<KeyField, PropertyField>(10000) {
@@ -4274,7 +4301,14 @@ public class SQLSession extends MutableClosedObject<OperationOwner> implements A
             }
 
             public void proceedBatch(ImOrderMap<ImMap<KeyField, Object>, ImMap<PropertyField, Object>> batch) throws SQLException {
-                insertSessionBatchRecords(sqlTo, table, batch.getMap(), owner);
+                try {
+                    insertSessionBatchRecords(sqlTo, table, batch.getMap(), owner);
+                } catch (SQLException e) {
+                    // a failure of the OTHER connection, thrown from inside a statement of this one. Left as it is, handle() reads its state as this session's own connection having closed,
+                    // and outside a transaction executeCommand answers that by running the statement again - which reads the table again and fails on the same dead connection again, without
+                    // end. Stripped of its state it is what it is, a failure of the copy, and the move is off
+                    throw new SQLException("copying " + table + " to the new connection failed", e);
+                }
                 proceeded.set(proceeded.result + batch.size());
             }
         };
