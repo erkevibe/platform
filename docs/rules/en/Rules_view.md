@@ -317,11 +317,31 @@ title: 'Rules: view logic'
    container of the form itself: the window is then not fixed
    and follows the content (details in `Form_design`).
 
+   A tab (`DOCKED`) is sized by the forms window, but the
+   base size bounds the height of the container itself there
+   too: the assistant SHOULD give a base height (`height`)
+   that fits on the form to a container whose component draws
+   more than fits on the form — a card feed, a view with
+   `useSeekOnScroll`: without it the container stretches the
+   form, with it the container expands into the free space by
+   its extension coefficient (`fill`) and scrolls its content
+   inside.
+
 9. `FALSE` is valid in the logical attributes of a `DESIGN`
    block — `defaultComponent`, `activated` and the like —
    because their values are literals, not expressions. The
    core rule that bans `FALSE` covers expressions only, and
    MUST NOT be applied here by rewriting it as `NULL`.
+
+10. In `DESIGN`, the assistant MUST use the property's name on
+    the form in `PROPERTY(...)`, following form rule 2:
+    `PROPERTY(number(o))` after `PROPERTIES(o) number`,
+    `PROPERTY(total())` after `PROPERTIES() total`, and
+    `PROPERTY(number)` only after the name was assigned
+    explicitly, `PROPERTIES(o) number = number`. A bare name
+    without such an assignment is reported as
+    `property 'number' is not found` although the property is
+    on the form.
 
 ## Navigator
 
@@ -421,6 +441,13 @@ title: 'Rules: view logic'
    Leading and trailing spaces take no part in the match and
    are kept around the substitution; a literal that is empty
    or made of spaces alone is never replaced.
+
+   The substitution also affects a literal a value is compared
+   with in a condition or filter, including scripts run through
+   `/eval` and `/exec`: the comparison is made against the
+   substituted text and, with no error at all, can silently
+   include unintended rows or drop expected ones. The assistant MUST write a comparison
+   value as a raw literal `r'...'`.
 
    Therefore the assistant MUST write technical literals —
    JSON keys, URLs, formats, canonical names,

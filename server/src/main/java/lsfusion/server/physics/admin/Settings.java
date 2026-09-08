@@ -16,8 +16,6 @@ public class Settings implements Cloneable {
 
     public boolean applyVolatileStats = false;
 
-    public boolean defaultOrdersNotNull = true; // временно
-
     // будет ли компилятор вместо UNION (когда UNION ALL не удается построить) использовать FULL JOIN
     boolean useFJInsteadOfUnion = false;
 
@@ -74,8 +72,6 @@ public class Settings implements Cloneable {
     private int freeAPISessions = 12;
     private boolean reinitAPISession = false;
 
-    private boolean commonUnique = true; // потому как в таком случае все common connection'ы начинают блокировать друг друга, поэтому схема с private pool'ом правильней
-
     private boolean disablePoolConnections = false;
 
     private boolean disablePoolPreparedStatements = true;
@@ -84,10 +80,6 @@ public class Settings implements Cloneable {
 
     private boolean disablePrereadValues = false;
 
-    private boolean disableSumGroupNotZero = false;
-
-    private int usedChangesCacheLimit = 20;
-
     // максимум сколько свойств вместе будет применяться в базу
     private int splitIncrementApply = 10;
 
@@ -95,11 +87,7 @@ public class Settings implements Cloneable {
 
     private int averageIntervalStat = 1;
 
-    private int barcodeLength = 13;
-
     private int inlineClassThreshold = 6; // threshold, how many class tables will be wrapped into a subquery
-
-    private boolean useSingleJoins = false;
 
     private boolean useQueryExpr = true;
 
@@ -117,8 +105,6 @@ public class Settings implements Cloneable {
     private boolean busyDialog = true;
 
     private long busyDialogTimeout = 1000;
-
-    private boolean safeCheckFileExistence = true;
 
     public int getLimitWhereJoinsDegree() {
         return limitWhereJoinsDegree;
@@ -198,8 +184,6 @@ public class Settings implements Cloneable {
 
     private boolean disableAutoHintCaches = true;
 
-    private int groupJoinLevel = 1; // -1 отключить
-
     // если prev идет в value, то использовать то значение которое есть сейчас после singleapply,
     // а не высчитывать на начало транзакции потому как все равно "временнОй" целостности не будет
     private boolean useEventValuePrevHeuristic = true;
@@ -208,14 +192,7 @@ public class Settings implements Cloneable {
     // however it's not evident if we should respect calculated events (the main problem is in getDroppedDepends) which gives sometimes really undesirable behaviour
     private boolean useCalculatedEventsInEventOrder = false;
 
-    // отключает оптимизацию с вкладками
-    private boolean disableTabbedOptimization = false;
-
     private boolean checkUniqueEvent = false; // проверять на то что для одного свойства один event
-
-    private boolean disableChangeModifierAllHints = true; // если есть change modifier то disable'ить hint'ы - временное решение
-
-    private boolean disableValueAllHints = true; // если есть change modifier то disable'ить hint'ы - временное решение
 
     private int commandLengthVolatileStats = 100000000; // определяет при какой длине команды, включать работу с волатильной статистикой
 
@@ -231,13 +208,9 @@ public class Settings implements Cloneable {
 
     private int queryPrepareRunTime = 40; // время выполнения запроса, при которой необходимо pool'ить preparedStatement'ы
 
-    private boolean disableSimpleAddRemoveInNonExclCase = true;
-
     private boolean modifySessionTableInsteadOfRewrite = true;
 
     private boolean checkAlwaysNull = true;
-
-    private boolean checkClassWhere = true;
 
     private int dialogTransactionTimeout = 5000;
 
@@ -519,14 +492,6 @@ public class Settings implements Cloneable {
         this.reinitAPISession = reinitAPISession;
     }
 
-    public boolean isCommonUnique() {
-        return commonUnique;
-    }
-
-    public void setCommonUnique(boolean commonUnique) {
-        this.commonUnique = commonUnique;
-    }
-
     public boolean isDisablePoolConnections() {
         return disablePoolConnections;
     }
@@ -557,22 +522,6 @@ public class Settings implements Cloneable {
 
     public void setDisablePrereadValues(boolean disablePrereadValues) {
         this.disablePrereadValues = disablePrereadValues;
-    }
-
-    public boolean isDisableSumGroupNotZero() {
-        return disableSumGroupNotZero;
-    }
-
-    public void setDisableSumGroupNotZero(boolean disableSumGroupNotZero) {
-        this.disableSumGroupNotZero = disableSumGroupNotZero;
-    }
-
-    public int getUsedChangesCacheLimit() {
-        return usedChangesCacheLimit;
-    }
-
-    public void setUsedChangesCacheLimit(int usedChangesCacheLimit) {
-        this.usedChangesCacheLimit = usedChangesCacheLimit;
     }
 
     public int getSplitIncrementApply() {
@@ -619,32 +568,8 @@ public class Settings implements Cloneable {
         this.busyDialogTimeout = busyDialogTimeout;
     }
 
-    public boolean isSafeCheckFileExistence() {
-        return safeCheckFileExistence;
-    }
-
-    public void setSafeCheckFileExistence(boolean safeCheckFileExistence) {
-        this.safeCheckFileExistence = safeCheckFileExistence;
-    }
-
     public void setAverageIntervalStat(int averageIntervalStat) {
         this.averageIntervalStat = averageIntervalStat;
-    }
-
-    public int getBarcodeLength() {
-        return barcodeLength;
-    }
-
-    public void setBarcodeLength(int barcodeLength) {
-        this.barcodeLength = barcodeLength;
-    }
-
-    public boolean isUseSingleJoins() {
-        return useSingleJoins;
-    }
-
-    public void setUseSingleJoins(boolean useSingleJoins) {
-        this.useSingleJoins = useSingleJoins;
     }
 
     public boolean isUseQueryExpr() {
@@ -1037,14 +962,6 @@ public class Settings implements Cloneable {
         this.disableAutoHintCaches = disableAutoHintCaches;
     }
 
-    public int getGroupJoinLevel() {
-        return groupJoinLevel;
-    }
-
-    public void setGroupJoinLevel(int groupJoinLevel) {
-        this.groupJoinLevel = groupJoinLevel;
-    }
-
     public boolean isApplyVolatileStats() {
         return applyVolatileStats;
     }
@@ -1061,44 +978,12 @@ public class Settings implements Cloneable {
         this.useEventValuePrevHeuristic = useEventValuePrevHeuristic;
     }
 
-    public boolean isDisableTabbedOptimization() {
-        return disableTabbedOptimization;
-    }
-
-    public void setDisableTabbedOptimization(boolean disableTabbedOptimization) {
-        this.disableTabbedOptimization = disableTabbedOptimization;
-    }
-
     public boolean isCheckUniqueEvent() {
         return checkUniqueEvent;
     }
 
     public void setCheckUniqueEvent(boolean checkUniqueEvent) {
         this.checkUniqueEvent = checkUniqueEvent;
-    }
-
-    public boolean isDisableChangeModifierAllHints() {
-        return disableChangeModifierAllHints;
-    }
-
-    public void setDisableChangeModifierAllHints(boolean disableChangeModifierAllHints) {
-        this.disableChangeModifierAllHints = disableChangeModifierAllHints;
-    }
-
-    public boolean isDisableValueAllHints() {
-        return disableValueAllHints;
-    }
-
-    public void setDisableValueAllHints(boolean disableValueAllHints) {
-        this.disableValueAllHints = disableValueAllHints;
-    }
-
-    public boolean isDefaultOrdersNotNull() {
-        return defaultOrdersNotNull;
-    }
-
-    public void setDefaultOrdersNotNull(boolean defaultOrdersNotNull) {
-        this.defaultOrdersNotNull = defaultOrdersNotNull;
     }
 
     public int getCommandLengthVolatileStats() {
@@ -1181,14 +1066,6 @@ public class Settings implements Cloneable {
         this.queryPrepareRunTime = queryPrepareRunTime;
     }
 
-    public boolean isDisableSimpleAddRemoveInNonExclCase() {
-        return disableSimpleAddRemoveInNonExclCase;
-    }
-
-    public void setDisableSimpleAddRemoveInNonExclCase(boolean disableSimpleAddRemoveInNonExclCase) {
-        this.disableSimpleAddRemoveInNonExclCase = disableSimpleAddRemoveInNonExclCase;
-    }
-
     public boolean isModifySessionTableInsteadOfRewrite() {
         return modifySessionTableInsteadOfRewrite;
     }
@@ -1205,10 +1082,6 @@ public class Settings implements Cloneable {
         this.checkAlwaysNull = checkAlwaysNull;
     }
 
-    public boolean isCheckClassWhere() {
-        return checkClassWhere;
-    }
-
     public int getDialogTransactionTimeout() {
         return dialogTransactionTimeout;
     }
@@ -1223,10 +1096,6 @@ public class Settings implements Cloneable {
 
     public void setDisableExplicitVolatileStats(String disableExplicitVolatileStats) {
         this.disableExplicitVolatileStats = disableExplicitVolatileStats;
-    }
-
-    public void setCheckClassWhere(boolean checkClassWhere) {
-        this.checkClassWhere = checkClassWhere;
     }
 
     public void setProperties(Map<String, String> properties) {
@@ -1475,16 +1344,6 @@ public class Settings implements Cloneable {
         this.queryLengthLimit = queryLengthLimit;
     }
 
-    private boolean enableHacks = true;
-
-    public boolean isEnableHacks() {
-        return enableHacks;
-    }
-
-    public void setEnableHacks(boolean enableHacks) {
-        this.enableHacks = enableHacks;
-    }
-    
     private int logLevelJDBC = 0;
 
     public int getLogLevelJDBC() {
@@ -1495,16 +1354,6 @@ public class Settings implements Cloneable {
         this.logLevelJDBC = logLevelJDBC;
     }
     
-    private boolean useSafeStringAgg = false; // temporary
-
-    public boolean isUseSafeStringAgg() {
-        return useSafeStringAgg;
-    }
-
-    public void setUseSafeStringAgg(boolean useSafeStringAgg) {
-        this.useSafeStringAgg = useSafeStringAgg;
-    }
-
     // safe cast type for integral (arithmetic casts)
     // 0 - using pl/sql function with try catch clause - the problem that there seems to be a bug in PostgreSQL 13 when canceling this statement
     // 1 - (default) using sql function that compares with maximum minimum values
@@ -1655,26 +1504,6 @@ public class Settings implements Cloneable {
 
     public void setEnableAdjustSelectivity(boolean enableAdjustSelectivity) {
         this.enableAdjustSelectivity = enableAdjustSelectivity;
-    }
-    
-    private boolean useMSSQLFuncWrapper = false; // в ms sql оборачивать CASE WHEN'ы (в основном CASE WHEN ... NULL END) в функции из-за проблем со статистикой в SQL Server <= 2012 
-
-    public boolean isUseMSSQLFuncWrapper() {
-        return useMSSQLFuncWrapper;
-    }
-
-    public void setUseMSSQLFuncWrapper(boolean useMSSQLFuncWrapper) {
-        this.useMSSQLFuncWrapper = useMSSQLFuncWrapper;
-    }
-    
-    private String logTimeFilter = "";
-
-    public String getLogTimeFilter() {
-        return logTimeFilter;
-    }
-
-    public void setLogTimeFilter(String logTimeFilter) {
-        this.logTimeFilter = logTimeFilter;
     }
     
     private long logTimeThreshold = 60;
@@ -1974,16 +1803,6 @@ public class Settings implements Cloneable {
         this.divStatUpdateTypeHeur = divStatUpdateTypeHeur;
     }
 
-    private boolean useUserChangesSync = true; // использовать для пользователя синхронизацию изменений
-
-    public boolean getUseUserChangesSync() {
-        return useUserChangesSync;
-    }
-
-    public void setUseUserChangesSync(boolean useUserChangesSync) {
-        this.useUserChangesSync = useUserChangesSync;
-    }
-
     private boolean allowNestedTransaction = false; // allow a nested sql transaction (it has no atomicity of its own : its commit is physically nothing and its changes disappear with the outer rollback) instead of failing; can be enabled for a single stack with pushSetting / popSetting - the way the service operations take the nesting on, see DBManager.run
 
     public boolean isAllowNestedTransaction() {
@@ -2002,16 +1821,6 @@ public class Settings implements Cloneable {
 
     public void setAllowUserInteractionInTransaction(boolean allowUserInteractionInTransaction) {
         this.allowUserInteractionInTransaction = allowUserInteractionInTransaction;
-    }
-
-    private boolean packStatBackwardCompatibility = false;
-
-    public boolean isPackStatBackwardCompatibility() {
-        return packStatBackwardCompatibility;
-    }
-
-    public void setPackStatBackwardCompatibility(boolean packStatBackwardCompatibility) {
-        this.packStatBackwardCompatibility = packStatBackwardCompatibility;
     }
 
     private boolean removeJoinCutBackwardCompatibility = false; // fall back to cutting the whole dependent join in the push down recursion guard (instead of virtualizing its arguments) + the compensating getReducePushedStatKeys heuristics
@@ -2248,16 +2057,6 @@ public class Settings implements Cloneable {
 
     public void setMaxNumericScale(int maxNumericScale) {
         this.maxNumericScale = maxNumericScale;
-    }
-
-    private int maxEdgeIterations = 100;
-
-    public int getMaxEdgeIterations() {
-        return maxEdgeIterations;
-    }
-
-    public void setMaxEdgeIterations(int maxEdgeIterations) {
-        this.maxEdgeIterations = maxEdgeIterations;
     }
 
 //    private int minClassDataIndexCount = 1000; // при превышении какого количества записей строить индексы
@@ -2629,26 +2428,6 @@ public class Settings implements Cloneable {
         this.closeNotConfirmedDelay = closeNotConfirmedDelay;
     }
 
-    private int waitSchedulerCanceledDelay = 5000;
-
-    public int getWaitSchedulerCanceledDelay() {
-        return waitSchedulerCanceledDelay;
-    }
-
-    public void setWaitSchedulerCanceledDelay(int waitSchedulerCanceledDelay) {
-        this.waitSchedulerCanceledDelay = waitSchedulerCanceledDelay;
-    }
-
-    private boolean disableFinalized = false; // есть вопрос с синхронизацией explicitClose FormInstance
-
-    public boolean isDisableFinalized() {
-        return disableFinalized;
-    }
-
-    public void setDisableFinalized(boolean disableFinalized) {
-        this.disableFinalized = disableFinalized;
-    }
-
     private boolean checkSessionCount = false;
 
     public boolean isCheckSessionCount() {
@@ -2709,26 +2488,6 @@ public class Settings implements Cloneable {
         this.transformPartitionExprsToKeys = transformPartitionExprsToKeys;
     }
 
-    private int logHeurStackSize = 1;
-
-    public int getLogHeurStackSize() {
-        return logHeurStackSize;
-    }
-
-    public void setLogHeurStackSize(int logHeurStackSize) {
-        this.logHeurStackSize = logHeurStackSize;
-    }
-
-    private int constraintRowsLimit = 30;
-
-    public int getConstraintRowsLimit() {
-        return constraintRowsLimit;
-    }
-
-    public void setConstraintRowsLimit(int constraintRowsLimit) {
-        this.constraintRowsLimit = constraintRowsLimit;
-    }
-    
     private boolean disableCheckDataClasses = false; // проверка на целостность изменений свойств перед применением транзакции (без SERIALIZABLE не имеет особого смысла)
 
     public boolean isDisableCheckDataClasses() {
@@ -2865,16 +2624,6 @@ public class Settings implements Cloneable {
         this.useHeurCanBeChanged = useHeurCanBeChanged;
     }
 
-    private boolean enableInteractiveAssertLog = false; // temporary
-
-    public boolean isEnableInteractiveAssertLog() {
-        return enableInteractiveAssertLog;
-    }
-
-    public void setEnableInteractiveAssertLog(boolean enableInteractiveAssertLog) {
-        this.enableInteractiveAssertLog = enableInteractiveAssertLog;
-    }
-
     private double cacheNextEventActionRatio = 0.05; // if the percent of changes is lower that this percent of events - cache them
 
     public double getCacheNextEventActionRatio() {
@@ -2904,18 +2653,6 @@ public class Settings implements Cloneable {
 
     public void setStacktraceInSQLSession(boolean stacktraceInSQLSession) {
         this.stacktraceInSQLSession = stacktraceInSQLSession;
-    }
-
-    // version for backward compatibility
-    // 3 - version: building hierarchy includes groups without properties
-    private int backwardCompatibilityVersion = 999999;
-
-    public int getBackwardCompatibilityVersion() {
-        return backwardCompatibilityVersion;
-    }
-
-    public void setBackwardCompatibilityVersion(int backwardCompatibilityVersion) {
-        this.backwardCompatibilityVersion = backwardCompatibilityVersion;
     }
 
     private boolean useRequestTimeout = true;
@@ -3167,17 +2904,6 @@ public class Settings implements Cloneable {
     }
     public void setOauthAuthCodeExpiration(int oauthAuthCodeExpiration) {
         this.oauthAuthCodeExpiration = oauthAuthCodeExpiration;
-    }
-
-    //temporary setting, enable if order changed after update
-    private boolean groupIntegrationHierarchyOldOrder = false;
-
-    public boolean isGroupIntegrationHierarchyOldOrder() {
-        return groupIntegrationHierarchyOldOrder;
-    }
-
-    public void setGroupIntegrationHierarchyOldOrder(boolean groupIntegrationHierarchyOldOrder) {
-        this.groupIntegrationHierarchyOldOrder = groupIntegrationHierarchyOldOrder;
     }
 
     private int asyncValuesLongCacheThreshold = 4;
